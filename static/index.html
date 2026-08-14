@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LooniePulse FX | TD Bank CAD to USD Intelligence & Transfer Agent</title>
+  <meta name="description" content="Autonomous exchange rate tracker, historical trend analyzer, and recommendation agent for Canadian transfers to the US via TD Bank.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="app.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Top Navigation Bar -->
+    <header class="top-nav">
+      <div class="nav-brand">
+        <div class="brand-logo">
+          <span class="flag-icon">🇨🇦</span>
+          <span class="arrow-icon">➔</span>
+          <span class="flag-icon">🇺🇸</span>
+        </div>
+        <div class="brand-meta">
+          <h1 class="brand-title">LooniePulse FX</h1>
+          <p class="brand-subtitle">Autonomous TD Bank CAD/USD Transfer & Target Agent</p>
+        </div>
+      </div>
+
+      <div class="nav-controls">
+        <div class="live-indicator" id="liveStatusPill">
+          <span class="pulse-dot"></span>
+          <span class="live-text">AGENT ACTIVE</span>
+        </div>
+
+        <button class="btn btn-secondary" id="btnTestNotify" title="Send a test notification to macOS Notification Center">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          Test macOS Alert
+        </button>
+
+        <button class="btn btn-primary" id="btnRefreshRates">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          Sync Rates
+        </button>
+      </div>
+    </header>
+
+    <main class="dashboard-grid">
+      <!-- 1. Hero Rate Matrix -->
+      <section class="rate-strip">
+        <div class="rate-card primary-card">
+          <div class="rate-card-header">
+            <span class="badge badge-spot">Interbank Spot</span>
+            <span class="source-tag" id="spotSource">Bank of Canada / Yahoo</span>
+          </div>
+          <div class="rate-value-group">
+            <span class="currency-prefix">1 CAD =</span>
+            <span class="rate-display highlight-green" id="spotRateDisplay">0.7215</span>
+            <span class="currency-suffix">USD</span>
+          </div>
+          <div class="rate-card-sub" id="spotInverseDisplay">1 USD = 1.3860 CAD</div>
+        </div>
+
+        <div class="rate-card td-card">
+          <div class="rate-card-header">
+            <span class="badge badge-td">TD Retail Rate</span>
+            <span class="spread-tag badge-danger" id="tdSpreadTag">-2.65% Spread</span>
+          </div>
+          <div class="rate-value-group">
+            <span class="currency-prefix">1 CAD =</span>
+            <span class="rate-display text-muted" id="tdRetailRateDisplay">0.7024</span>
+            <span class="currency-suffix">USD</span>
+          </div>
+          <div class="rate-card-sub text-danger" id="tdCostPer10k">Cost: ~$265 USD per $10k CAD</div>
+        </div>
+
+        <div class="rate-card norbert-card">
+          <div class="rate-card-header">
+            <span class="badge badge-norbert">⚡ Norbert's Gambit (TD DI)</span>
+            <span class="spread-tag badge-success">~0.10% Spread</span>
+          </div>
+          <div class="rate-value-group">
+            <span class="currency-prefix">1 CAD =</span>
+            <span class="rate-display highlight-gold" id="norbertRateDisplay">0.7208</span>
+            <span class="currency-suffix">USD</span>
+          </div>
+          <div class="rate-card-sub text-success" id="norbertSavingsHeader">Save ~+$950 USD on $50k</div>
+        </div>
+
+        <div class="rate-card stats-card">
+          <div class="rate-card-header">
+            <span class="badge badge-neutral">10-Year Percentile</span>
+            <span class="source-tag">Historical Context</span>
+          </div>
+          <div class="rate-value-group">
+            <span class="rate-display text-warning" id="percentile10yDisplay">16.4%</span>
+            <span class="currency-suffix">(Cycle Low)</span>
+          </div>
+          <div class="rate-card-sub" id="percentileSubText">CAD lower only 16% of past decade</div>
+        </div>
+      </section>
+
+      <!-- 2. Action Recommendation Banner -->
+      <section class="recommendation-banner" id="recommendationBanner">
+        <div class="verdict-header">
+          <div class="verdict-badge-container">
+            <span class="verdict-pill badge-danger" id="verdictPill">UNFAVORABLE (HOLD)</span>
+            <div class="feasibility-meter-box">
+              <span class="meter-label">Transfer Feasibility:</span>
+              <div class="meter-bar-track">
+                <div class="meter-bar-fill" id="feasibilityMeterFill" style="width: 25%;"></div>
+              </div>
+              <span class="meter-score" id="feasibilityScore">25 / 100</span>
+            </div>
+          </div>
+          <div class="last-updated-text" id="recUpdatedTime">Analyzed: Just now</div>
+        </div>
+
+        <div class="verdict-body">
+          <h2 class="verdict-title" id="verdictTitle">0.71 CAD/USD is in the bottom 15% of historical cycles — Avoid standard TD Retail FX.</h2>
+          <p class="verdict-desc" id="verdictDesc">
+            Converting CAD to USD at TD Bank's EasyWeb retail window right now forces you to sell near multi-year macro lows while paying an additional 2.65% bank margin. We recommend setting an alert for target recovery levels or utilizing Norbert's Gambit on TD Direct Investing immediately to capture spot rates.
+          </p>
+          <div class="verdict-action-box" id="verdictActionBox">
+            <span class="action-icon">💡</span>
+            <div class="action-content">
+              <strong>Actionable Agent Strategy:</strong>
+              <span id="verdictAdvice">Set automated alert for Target 1 (0.7300 USD) or execute Norbert's Gambit on TD Direct Investing to gain an immediate +$1,300+ USD on a $50k transfer.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Transfer Calculator & Channel Comparison -->
+      <section class="panel-section">
+        <div class="section-header">
+          <div class="section-title-group">
+            <h3 class="section-title">Transfer Cost & Channel Breakdown</h3>
+            <p class="section-subtitle">Real-time simulation of exact USD received and hidden fees across transfer methods</p>
+          </div>
+          <div class="amount-selector-group">
+            <label for="transferAmountInput" class="input-label">CAD Transfer Amount:</label>
+            <div class="input-with-symbol">
+              <span class="symbol">$</span>
+              <input type="number" id="transferAmountInput" class="input-field" value="50000" step="5000" min="1000">
+              <span class="suffix">CAD</span>
+            </div>
+            <div class="quick-buttons">
+              <button class="btn-chip" data-amount="10000">$10k</button>
+              <button class="btn-chip" data-amount="25000">$25k</button>
+              <button class="btn-chip active" data-amount="50000">$50k</button>
+              <button class="btn-chip" data-amount="100000">$100k</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table" id="channelTable">
+            <thead>
+              <tr>
+                <th>Channel / Method</th>
+                <th>Effective Rate</th>
+                <th>USD Received</th>
+                <th>Hidden Spread Loss</th>
+                <th>Net Gain vs TD EasyWeb</th>
+                <th>Settlement</th>
+              </tr>
+            </thead>
+            <tbody id="channelTableBody">
+              <!-- Dynamically Populated -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 4. Interactive Trend Chart & Target Zones -->
+      <section class="panel-section chart-section">
+        <div class="section-header">
+          <div class="section-title-group">
+            <h3 class="section-title">CAD to USD Historical Trends & Target Zones</h3>
+            <p class="section-subtitle">Comparing Interbank Spot vs TD Retail with 50-DMA, Support/Resistance & Target Thresholds</p>
+          </div>
+          <div class="chart-controls">
+            <div class="timeframe-buttons" id="timeframeButtons">
+              <button class="btn-timeframe" data-period="1m">1M</button>
+              <button class="btn-timeframe" data-period="6m">6M</button>
+              <button class="btn-timeframe active" data-period="1y">1Y</button>
+              <button class="btn-timeframe" data-period="5y">5Y</button>
+              <button class="btn-timeframe" data-period="10y">10Y</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-container">
+          <canvas id="fxTrendChart"></canvas>
+        </div>
+
+        <div class="chart-legend-custom">
+          <div class="legend-item"><span class="color-box line-spot"></span> Interbank Spot (BoC/Market)</div>
+          <div class="legend-item"><span class="color-box line-td"></span> TD Bank Retail Rate (-2.65%)</div>
+          <div class="legend-item"><span class="color-box line-target"></span> Target 1 (0.7300)</div>
+          <div class="legend-item"><span class="color-box line-median"></span> 10Y Median (0.7650)</div>
+        </div>
+      </section>
+
+      <!-- 5. Two Column Grid: Target Ladder & Macro Drivers -->
+      <div class="two-col-grid">
+        <!-- Target Price Ladder -->
+        <section class="panel-section">
+          <div class="section-header">
+            <h3 class="section-title">Target Price Ladder & Forecast Horizons</h3>
+          </div>
+          <div class="ladder-list" id="targetLadderList">
+            <!-- Dynamically Populated -->
+          </div>
+        </section>
+
+        <!-- Macro Fundamentals -->
+        <section class="panel-section">
+          <div class="section-header">
+            <h3 class="section-title">Macroeconomic Drivers (BoC vs Fed)</h3>
+          </div>
+          <div class="macro-list" id="macroDriversList">
+            <!-- Dynamically Populated -->
+          </div>
+        </section>
+      </div>
+
+      <!-- 6. Alert & Notification Management & Simulator -->
+      <section class="panel-section">
+        <div class="section-header">
+          <div class="section-title-group">
+            <h3 class="section-title">Autonomous Alert Engine & Dispatcher</h3>
+            <p class="section-subtitle">Receive instant macOS Desktop and Webhook notifications when target rates are breached</p>
+          </div>
+        </div>
+
+        <div class="alert-grid">
+          <!-- Add Alert Form -->
+          <div class="alert-form-card">
+            <h4 class="card-subtitle">Set New Rate Trigger</h4>
+            <form id="addAlertForm" class="form-vertical">
+              <div class="form-group">
+                <label for="targetRateInput">Target Exchange Rate:</label>
+                <div class="input-with-symbol">
+                  <input type="number" id="targetRateInput" class="input-field" step="0.0050" min="0.6500" max="0.9000" value="0.7350" required>
+                  <span class="suffix">USD</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="targetTypeSelect">Rate Benchmark:</label>
+                <select id="targetTypeSelect" class="input-field">
+                  <option value="spot">Interbank Spot Rate (CAD/USD)</option>
+                  <option value="td_retail">TD Bank Retail Rate</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="channelSelect">Notification Channel:</label>
+                <select id="channelSelect" class="input-field">
+                  <option value="all">macOS Desktop & Audio Alert (All)</option>
+                  <option value="system">macOS Notification Center Only</option>
+                  <option value="webhook">Webhook (Discord / Slack)</option>
+                </select>
+              </div>
+
+              <div class="form-group" id="webhookInputGroup" style="display:none;">
+                <label for="webhookUrlInput">Webhook URL:</label>
+                <input type="url" id="webhookUrlInput" class="input-field" placeholder="https://discord.com/api/webhooks/...">
+              </div>
+
+              <button type="submit" class="btn btn-primary btn-block">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>
+                Activate Rate Watcher Alert
+              </button>
+            </form>
+          </div>
+
+          <!-- Active Alerts List -->
+          <div class="alerts-list-card">
+            <h4 class="card-subtitle">Active Watcher Rules</h4>
+            <div class="rules-container" id="activeRulesList">
+              <!-- Dynamically populated -->
+            </div>
+
+            <!-- Rate Spike Simulator -->
+            <div class="simulator-box">
+              <div class="simulator-header">
+                <span class="sim-icon">🧪</span>
+                <strong>Live Trigger Simulator</strong>
+              </div>
+              <p class="sim-desc">Simulate an intraday market spike to test automated alert execution:</p>
+              <div class="sim-controls">
+                <button class="btn btn-sm btn-secondary" onclick="simulateSpike(0.7320)">Spike to 0.7320</button>
+                <button class="btn btn-sm btn-secondary" onclick="simulateSpike(0.7450)">Spike to 0.7450</button>
+                <button class="btn btn-sm btn-secondary" onclick="simulateSpike(0.7650)">Spike to 0.7650</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. Step-by-Step Norbert's Gambit Action Guide for TD -->
+      <section class="panel-section norbert-guide-section">
+        <div class="section-header">
+          <div class="section-title-group">
+            <h3 class="section-title">TD Direct Investing: Norbert's Gambit Execution Guide</h3>
+            <p class="section-subtitle">Eliminate TD Bank's 2.65% retail FX spread and convert at pure spot rate in 4 simple steps</p>
+          </div>
+        </div>
+
+        <div class="step-guide-grid">
+          <div class="step-card">
+            <div class="step-num">01</div>
+            <h4 class="step-title">Open Dual Currency Accounts</h4>
+            <p class="step-desc">Ensure you have a CAD and USD account inside <strong>TD Direct Investing</strong> (Cash, Margin, or TFSA/RRSP).</p>
+          </div>
+
+          <div class="step-card">
+            <div class="step-num">02</div>
+            <h4 class="step-title">Buy DLR.TO in CAD</h4>
+            <p class="step-desc">Purchase Horizons US Dollar ETF (<strong>DLR.TO</strong>) on the TSX using your CAD funds ($9.99 CAD flat commission).</p>
+          </div>
+
+          <div class="step-card">
+            <div class="step-num">03</div>
+            <h4 class="step-title">Journal Shares to DLR.U.TO</h4>
+            <p class="step-desc">Call TD Direct Investing or message via TD WebBroker Secure Messaging to <strong>journal</strong> your shares from `DLR.TO` to `DLR.U.TO` (USD).</p>
+          </div>
+
+          <div class="step-card">
+            <div class="step-num">04</div>
+            <h4 class="step-title">Sell DLR.U.TO for USD Cash</h4>
+            <p class="step-desc">Once journaled, sell <strong>DLR.U.TO</strong> for USD cash. Transfer the USD to your TD Bank USA or US checking account.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <div class="footer-content">
+        <p>LooniePulse FX &copy; 2026. Official Bank of Canada Valet & Market Intelligence Feeds. For personal transfer optimization.</p>
+      </div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

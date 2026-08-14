@@ -1,0 +1,29 @@
+name: LooniePulse FX 24/7 Cloud Tracker
+
+on:
+  schedule:
+    # Runs automatically every 30 minutes 24/7/365
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # Allows you to manually click "Run workflow" in GitHub anytime
+
+jobs:
+  track-cad-usd:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Run Cloud FX Intelligence Check
+        env:
+          TARGET_RATE: ${{ vars.TARGET_RATE || '0.7300' }}
+          NTFY_TOPIC: ${{ vars.NTFY_TOPIC || secrets.NTFY_TOPIC }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python3 cloud_monitor.py
