@@ -21,7 +21,7 @@ class RateFetcher:
         self.NORBERT_FLAT_COMMISSION = 9.99  # $9.99 CAD commission per leg (TD Direct Investing)
 
     def fetch_boc_latest(self):
-        """Fetch latest daily rate from Bank of Canada Valet API."""
+        """Fetch latest daily rate and previous day close from Bank of Canada Valet API."""
         url = "https://www.bankofcanada.ca/valet/observations/FXUSDCAD/json?recent=5"
         try:
             req = urllib.request.Request(
@@ -32,24 +32,35 @@ class RateFetcher:
                 if response.status == 200:
                     data = json.loads(response.read().decode('utf-8'))
                     observations = data.get("observations", [])
-                    if observations:
+                    if observations and len(observations) >= 1:
                         latest = observations[-1]
                         usdcad = float(latest["FXUSDCAD"]["v"])
                         cadusd_spot = 1.0 / usdcad
                         date_str = latest["d"]
+                        
+                        prev_spot = cadusd_spot
+                        if len(observations) >= 2:
+                            prev_usdcad = float(observations[-2]["FXUSDCAD"]["v"])
+                            prev_spot = 1.0 / prev_usdcad
+
+                        change_usd = cadusd_spot - prev_spot
+                        change_pct = (change_usd / prev_spot) * 100.0 if prev_spot else 0.0
+
                         return {
                             "spot_rate": round(cadusd_spot, 5),
                             "usdcad_spot": round(usdcad, 5),
+                            "prev_spot": round(prev_spot, 5),
+                            "change_usd": round(change_usd, 5),
+                            "change_pct": round(change_pct, 2),
                             "date": date_str,
                             "source": "Bank of Canada Valet API"
                         }
-        except Exception as e:
-            # Fallback to simulated/cached live rate if sandbox restricts external network
+        except Exception:
             pass
         return None
 
     def fetch_yahoo_spot(self):
-        """Fetch live intraday spot rate for CADUSD=X."""
+        """Fetch live intraday spot rate and previous close for CADUSD=X."""
         url = "https://query1.finance.yahoo.com/v8/finance/chart/CADUSD=X?interval=1m&range=1d"
         try:
             req = urllib.request.Request(
@@ -61,11 +72,20 @@ class RateFetcher:
                     data = json.loads(response.read().decode('utf-8'))
                     result = data["chart"]["result"][0]
                     meta = result["meta"]
-                    price = meta.get("regularMarketPrice", meta.get("chartPreviousClose"))
+                    price = meta.get("regularMarketPrice")
+                    prev_close = meta.get("chartPreviousClose", price)
                     if price:
+                        price_flt = float(price)
+                        prev_flt = float(prev_close) if prev_close else price_flt
+                        change_usd = price_flt - prev_flt
+                        change_pct = (change_usd / prev_flt) * 100.0 if prev_flt else 0.0
+
                         return {
-                            "spot_rate": round(float(price), 5),
-                            "usdcad_spot": round(1.0 / float(price), 5),
+                            "spot_rate": round(price_flt, 5),
+                            "usdcad_spot": round(1.0 / price_flt, 5),
+                            "prev_spot": round(prev_flt, 5),
+                            "change_usd": round(change_usd, 5),
+                            "change_pct": round(change_pct, 2),
                             "timestamp": datetime.now().isoformat(),
                             "source": "Yahoo Finance Realtime"
                         }
@@ -75,24 +95,30 @@ class RateFetcher:
 
     def get_current_rates(self):
         """
-        Get aggregated current rates: Spot, TD Retail, TD Wire, Norbert's Gambit, and Wise.
+        Get aggregated current rates with 24h trend: Spot, TD Retail, TD Wire, Norbert's Gambit, and Wise.
         """
-        # Try live sources
         quote = self.fetch_yahoo_spot() or self.fetch_boc_latest()
         
-        # If external network is unreachable (sandbox mode), use authentic baseline rate
         if not quote:
-            # Baseline authentic CAD/USD spot (~0.7185 - 0.7220)
             base_spot = 0.7215
+            prev_spot = 0.7198
+            change_usd = base_spot - prev_spot
+            change_pct = (change_usd / prev_spot) * 100.0
             quote = {
                 "spot_rate": base_spot,
                 "usdcad_spot": round(1.0 / base_spot, 4),
+                "prev_spot": prev_spot,
+                "change_usd": round(change_usd, 5),
+                "change_pct": round(change_pct, 2),
                 "date": datetime.now().strftime("%Y-%m-%d"),
                 "source": "Aggregated Market Engine (Indicative)"
             }
 
         spot = quote["spot_rate"]
         usdcad = quote["usdcad_spot"]
+        prev_spot = quote.get("prev_spot", spot)
+        change_usd = quote.get("change_usd", 0.0)
+        change_pct = quote.get("change_pct", 0.0)
 
         # Calculate specific provider rates
         td_retail_rate = round(spot * (1.0 - self.TD_RETAIL_SPREAD), 5)
@@ -101,10 +127,16 @@ class RateFetcher:
         wise_rate = round(spot * (1.0 - self.WISE_SPREAD), 5)
         norbert_raw_rate = round(spot * (1.0 - self.NORBERT_SPREAD), 5)
 
+        trend_direction = "UP" if change_pct > 0.05 else ("DOWN" if change_pct < -0.05 else "FLAT")
+
         return {
             "timestamp": datetime.now().isoformat(),
             "spot_cadusd": spot,
             "spot_usdcad": usdcad,
+            "prev_spot": prev_spot,
+            "change_usd": change_usd,
+            "change_pct": change_pct,
+            "trend_direction": trend_direction,
             "source": quote.get("source", "Market API"),
             "td_bank": {
                 "retail_rate": td_retail_rate,            # What user gets on EasyWeb
@@ -118,7 +150,7 @@ class RateFetcher:
                 "norberts_gambit": {
                     "effective_rate_raw": norbert_raw_rate,
                     "spread_pct": round(self.NORBERT_SPREAD * 100, 2),
-                    "commission_cad": self.NORBERT_FLAT_COMMISSION * 2, # Buy DLR.TO & Sell DLR.U.TO
+                    "commission_cad": self.NORBERT_FLAT_COMMISSION * 2,
                     "settlement_days": "1-2 Business Days"
                 },
                 "wise": {

@@ -151,10 +151,46 @@ def test_notification():
     if res:
         print("✅ Notification successfully sent!")
 
+def run_daily_digest():
+    fetcher = RateFetcher()
+    analyzer = Analyzer(fetcher)
+    recommender = Recommender(fetcher, analyzer)
+    notifier = Notifier()
+
+    rates = fetcher.get_current_rates()
+    rec = recommender.generate_recommendation(50000)
+
+    spot = rates["spot_cadusd"]
+    usdcad = rates["spot_usdcad"]
+    td_retail = rates["td_bank"]["retail_rate"]
+    change_pct = rates.get("change_pct", 0.0)
+    change_usd = rates.get("change_usd", 0.0)
+    trend_sign = "+" if change_pct > 0 else ""
+    trend_str = f"{trend_sign}{change_pct:.2f}% ({trend_sign}{change_usd:.4f} USD)"
+
+    title = f"☀️ CAD/USD Morning Briefing • {spot:.4f} USD"
+    msg = (
+        f"Daily Trend: {trend_str} (USD/CAD: {usdcad:.4f})\n"
+        f"• TD Retail: ${td_retail:.4f} | Spot: ${spot:.4f}\n"
+        f"• Verdict: {rec['verdict_badge']} (10Y Percentile: {rec['percentiles']['percentile_10y']}%)\n"
+        f"• Strategy: {rec['action_advice']}"
+    )
+
+    print_banner()
+    print(f"☀️ DAILY MORNING RATE BRIEFING:")
+    print(f"📊 Live Spot:      1 CAD = ${spot:.4f} USD  [{trend_str}]")
+    print(f"🏦 TD Retail Rate: 1 CAD = ${td_retail:.4f} USD  [-2.65% spread]")
+    print(f"⚡ Norbert's:      1 CAD = ${rates['alternatives']['norberts_gambit']['effective_rate_raw']:.4f} USD")
+    print(f"🎯 10-Yr Position: {rec['percentiles']['percentile_10y']}% ({rec['verdict_badge']})")
+    print(f"💡 Strategy:       {rec['action_advice']}")
+
+    notifier.send_notification(title, msg, channel="all", rate_val=spot)
+
 def main():
     parser = argparse.ArgumentParser(description="LooniePulse FX - TD CAD to USD Rate Tracker & Recommendation Agent")
     parser.add_argument("--status", action="store_true", help="Display current rates and quick status")
     parser.add_argument("--recommend", action="store_true", help="Display detailed transfer recommendations and channel comparison")
+    parser.add_argument("--daily-digest", action="store_true", help="Run daily morning rate digest and send notification")
     parser.add_argument("--amount", type=float, default=50000.0, help="CAD transfer amount for calculations (default: $50,000)")
     parser.add_argument("--monitor", action="store_true", help="Run the autonomous rate monitoring loop")
     parser.add_argument("--interval", type=int, default=60, help="Polling interval in seconds for monitor (default: 60)")
@@ -174,6 +210,8 @@ def main():
         run_status()
     elif args.recommend:
         run_recommend(args.amount)
+    elif args.daily_digest:
+        run_daily_digest()
     elif args.monitor:
         run_monitor(args.interval, args.target)
     elif args.alerts:
@@ -187,7 +225,6 @@ def main():
         from server import start_server
         start_server(args.port)
     else:
-        # Default to status if no arguments provided
         run_status()
 
 if __name__ == "__main__":

@@ -1,10 +1,18 @@
-name: LooniePulse FX 24/7 Cloud Tracker
+name: LooniePulse FX 24/7 Cloud Tracker & Daily Briefing
 
 on:
   schedule:
     # Runs automatically every 30 minutes 24/7/365
     - cron: '*/30 * * * *'
-  workflow_dispatch: # Allows you to manually click "Run workflow" in GitHub anytime
+    # Dedicated morning trigger at 13:00 UTC (9:00 AM EDT / 8:00 AM CDT)
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+    inputs:
+      force_digest:
+        description: 'Force send Daily Morning Briefing right now'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   track-cad-usd:
@@ -18,9 +26,11 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Run Cloud FX Intelligence Check
+      - name: Run Cloud FX Intelligence Check & Daily Digest
         env:
           TARGET_RATE: ${{ vars.TARGET_RATE || '0.7300' }}
+          DIGEST_HOUR_UTC: ${{ vars.DIGEST_HOUR_UTC || '13' }}
+          DAILY_DIGEST: ${{ inputs.force_digest && 'true' || 'false' }}
           NTFY_TOPIC: ${{ vars.NTFY_TOPIC || secrets.NTFY_TOPIC }}
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
