@@ -4,7 +4,7 @@ on:
   schedule:
     # Runs automatically every 30 minutes 24/7/365
     - cron: '*/30 * * * *'
-    # Dedicated morning trigger at 13:00 UTC (9:00 AM EDT / 8:00 AM CDT)
+    # Morning trigger at 13:00 UTC (9:00 AM EDT / 8:00 AM CDT)
     - cron: '0 13 * * *'
   workflow_dispatch:
     inputs:
@@ -12,7 +12,7 @@ on:
         description: 'Force send Daily Morning Briefing right now'
         required: false
         type: boolean
-        default: false
+        default: true
 
 jobs:
   track-cad-usd:
@@ -26,14 +26,19 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Run Cloud FX Intelligence Check & Daily Digest
+      - name: Run Cloud FX Intelligence Check & Email Delivery
         env:
           TARGET_RATE: ${{ vars.TARGET_RATE || '0.7300' }}
           DIGEST_HOUR_UTC: ${{ vars.DIGEST_HOUR_UTC || '13' }}
           DAILY_DIGEST: ${{ inputs.force_digest && 'true' || 'false' }}
+          ALERT_EMAIL: ${{ vars.ALERT_EMAIL || secrets.ALERT_EMAIL }}
           NTFY_TOPIC: ${{ vars.NTFY_TOPIC || secrets.NTFY_TOPIC }}
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_HOST: ${{ vars.SMTP_HOST || 'smtp.gmail.com' }}
+          SMTP_PORT: ${{ vars.SMTP_PORT || '587' }}
         run: |
           python3 cloud_monitor.py
