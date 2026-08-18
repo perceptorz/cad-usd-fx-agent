@@ -21,32 +21,41 @@ from core.rate_fetcher import RateFetcher
 from core.analyzer import Analyzer
 from core.recommender import Recommender
 
-def send_ntfy_push_and_email(topic: str, email_to: str, title: str, message: str, tags: str = "chart_with_upwards_trend,moneybag"):
+def send_ntfy_json(topic: str, email_to: str, title: str, message: str, tags: list):
     """
-    Sends an instant push notification to phone and/or free direct Email via ntfy.sh bridge.
-    Zero signup or SMTP configuration required.
+    Sends push notification and email via ntfy.sh JSON API.
     """
     target_topic = topic or "looniepulse_fx_briefings"
     try:
-        url = f"https://ntfy.sh/{target_topic}"
-        clean_title = title.encode('ascii', 'ignore').decode('ascii').strip() or "CAD/USD Rate Update"
-        headers = {
-            "Title": clean_title,
-            "Priority": "high",
-            "Tags": tags
+        url = "https://ntfy.sh"
+        payload = {
+            "topic": target_topic,
+            "title": title,
+            "message": message,
+            "priority": 4,
+            "tags": tags
         }
         if email_to:
-            headers["Email"] = email_to
+            payload["email"] = email_to
 
+        data = json.dumps(payload).encode('utf-8')
         req = urllib.request.Request(
             url,
-            data=message.encode('utf-8'),
-            headers=headers
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "LooniePulse-FX-Agent/1.0"
+            }
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return resp.status == 200
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            if resp.status == 200:
+                return True
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8', errors='ignore')
+        print(f"[Cloud Notifier] ntfy HTTP {e.code} Error: {error_body}")
+        return False
     except Exception as e:
-        print(f"[Cloud Notifier] ntfy push/email error: {e}")
+        print(f"[Cloud Notifier] ntfy general error: {e}")
         return False
 
 def send_smtp_email(smtp_user: str, smtp_pass: str, to_email: str, title: str, text_content: str, smtp_host: str = "smtp.gmail.com", smtp_port: int = 587):
@@ -69,7 +78,7 @@ def send_smtp_email(smtp_user: str, smtp_pass: str, to_email: str, title: str, t
               <p style="margin:4px 0 0 0; font-size:0.85rem; color:#94a3b8;">Autonomous TD CAD to USD Transfer Intelligence</p>
             </div>
             <div style="padding:24px; color:#334155; line-height:1.6;">
-              <pre style="font-family:inherit; white-space:pre-wrap; font-size:0.95rem; margin:0;">{text_content}</pre>
+              <pre style="font-family:inherit; white-space:pre-wrap; font-size:0.95rem; margin:0; line-height:1.6;">{text_content}</pre>
             </div>
             <div style="background:#f8fafc; padding:14px; text-align:center; font-size:0.75rem; color:#94a3b8; border-top:1px solid #e2e8f0;">
               LooniePulse FX 24/7 Autonomous Cloud Tracker • Bank of Canada & Interbank Spot Feed
@@ -77,13 +86,15 @@ def send_smtp_email(smtp_user: str, smtp_pass: str, to_email: str, title: str, t
           </div>
         </div>
         """
-        msg.attach(MIMEText(text_content, 'plain'))
-        msg.attach(MIMEText(html_content, 'html'))
+        msg.attach(MIMEText(text_content, 'plain', 'utf-8'))
+        msg.attach(MIMEText(html_content, 'html', 'utf-8'))
 
-        server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
+        server = smtplib.SMTP(smtp_host, smtp_port, timeout=12)
         server.starttls()
-        server.login(smtp_user, smtp_pass)
-        server.sendmail(smtp_user, [to_email], msg.as_string())
+        # Clean any whitespace from app password
+        clean_pass = smtp_pass.replace(" ", "").strip()
+        server.login(smtp_user.strip(), clean_pass)
+        server.sendmail(smtp_user.strip(), [to_email.strip()], msg.as_string())
         server.quit()
         return True
     except Exception as e:
@@ -151,20 +162,20 @@ def send_telegram_alert(bot_token: str, chat_id: str, message: str):
         return False
 
 def dispatch_notifications(title: str, msg: str, spot: float, trend_str: str, rec_badge: str, is_digest: bool, ntfy_topic: str, alert_email: str, discord_webhook: str, telegram_token: str, telegram_chat_id: str, smtp_user: str, smtp_pass: str, smtp_host: str, smtp_port: int):
-    tags = "sunrise,chart_with_upwards_trend" if is_digest else "rotating_light,moneybag"
+    tags = ["sunrise", "chart_with_upwards_trend"] if is_digest else ["rotating_light", "moneybag"]
     notified_any = False
 
-    # 1. Direct Email (via SMTP if configured)
+    # 1. Direct SMTP Email (if SMTP_USER and SMTP_PASS are set)
     if smtp_user and smtp_pass and alert_email:
         if send_smtp_email(smtp_user, smtp_pass, alert_email, title, msg, smtp_host, smtp_port):
             print(f"✅ Direct SMTP Email successfully delivered to {alert_email}")
             notified_any = True
 
-    # 2. Email & Phone Push via ntfy.sh bridge (Free, 0 SMTP passwords needed)
+    # 2. JSON ntfy.sh delivery (Phone Push & Email Relay)
     if ntfy_topic or (alert_email and not (smtp_user and smtp_pass)):
-        if send_ntfy_push_and_email(ntfy_topic, alert_email, title, msg, tags):
+        if send_ntfy_json(ntfy_topic, alert_email, title, msg, tags):
             if alert_email:
-                print(f"✅ Email notification dispatched to {alert_email} via ntfy mail bridge")
+                print(f"✅ Email notification dispatched to {alert_email} via ntfy relay")
             if ntfy_topic:
                 print(f"✅ Phone push notification dispatched to topic: {ntfy_topic}")
             notified_any = True
@@ -183,7 +194,7 @@ def dispatch_notifications(title: str, msg: str, spot: float, trend_str: str, re
             notified_any = True
 
     if not notified_any:
-        print("⚠️ Briefing generated, but no notification destination (ALERT_EMAIL, NTFY_TOPIC, DISCORD, or TELEGRAM) was configured.")
+        print("⚠️ Could not deliver notification. Please check that ALERT_EMAIL, NTFY_TOPIC, DISCORD, or SMTP credentials are valid.")
 
 def run_cloud_check(force_digest: bool = False):
     # Read environment variables
@@ -208,10 +219,11 @@ def run_cloud_check(force_digest: bool = False):
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
 
     print(f"=== [24/7 LooniePulse Cloud Tracker] ===")
-    print(f"🕒 UTC Timestamp:  {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
-    print(f"🎯 Target Alert:   CAD/USD >= {target_rate:.4f}")
-    print(f"📬 Email Recipient: {alert_email or '(None configured)'}")
-    print(f"🌅 Morning Window: {'ACTIVE (Sending Daily Digest)' if is_morning_window else 'Inactive (Standard Watcher Run)'}")
+    print(f"🕒 UTC Timestamp:   {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    print(f"🎯 Target Alert:    CAD/USD >= {target_rate:.4f}")
+    print(f"📬 Target Email:    {alert_email or '(None configured)'}")
+    print(f"🔑 SMTP Configured: {'YES (' + smtp_user + ')' if (smtp_user and smtp_pass) else 'NO (Using relay / push)'}")
+    print(f"🌅 Morning Window:  {'ACTIVE (Sending Daily Digest)' if is_morning_window else 'Inactive (Standard Watcher Run)'}")
 
     fetcher = RateFetcher()
     analyzer = Analyzer(fetcher)
@@ -233,13 +245,13 @@ def run_cloud_check(force_digest: bool = False):
     p10 = rec["percentiles"]["percentile_10y"]
     verdict_badge = rec["verdict_badge"]
 
-    print(f"📊 Live Spot:      1 CAD = ${spot:.4f} USD ({trend_str}) | USD/CAD: {usdcad:.4f}")
-    print(f"🏦 TD Retail:      1 CAD = ${td_retail:.4f} USD (-2.65% spread)")
-    print(f"⚡ Norbert's:      1 CAD = ${norbert:.4f} USD")
-    print(f"📈 Feasibility:    {verdict_badge} (Score: {rec['feasibility_score']}/100, 10Y Percentile: {p10}%)")
+    print(f"📊 Live Spot:       1 CAD = ${spot:.4f} USD ({trend_str}) | USD/CAD: {usdcad:.4f}")
+    print(f"🏦 TD Retail:       1 CAD = ${td_retail:.4f} USD (-2.65% spread)")
+    print(f"⚡ Norbert's:       1 CAD = ${norbert:.4f} USD")
+    print(f"📈 Feasibility:     {verdict_badge} (Score: {rec['feasibility_score']}/100, 10Y Percentile: {p10}%)")
 
     is_breached = spot >= target_rate
-    print(f"⚡ Target Breached: {'✅ YES' if is_breached else '❌ NO (Below target)'}")
+    print(f"⚡ Target Breached:  {'✅ YES' if is_breached else '❌ NO (Below target)'}")
 
     # Case 1: Target rate breached (Instant Priority Alert)
     if is_breached:
